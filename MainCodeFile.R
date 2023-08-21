@@ -2,10 +2,12 @@ source("LibrariesAndAuxiliaryFunctions.R")
 source("IndependentModel.R")
 source("DependentModel.R")
 source("DependentModelComplex.R")
-# source("PointProcessInference.R")
 
 library("gridExtra")
 library("cowplot")
+
+# Base section for scenario simulation ====
+# Here we define the elements of the scenario structure
 
 combinatorialFunction <- function(list){
   DF.old <- list
@@ -21,37 +23,16 @@ combinatorialFunction <- function(list){
 
 range_Spatial <- c(0.2, 0.5, 0.8)
 sigma_Spatial <- c(0.5)
-# nTot <- c(80, 150, 200, 400)
-# nProp <- c(0.1, 0.25, 0.5, 0.75, 0.9)
 nTot <- c(60, 100, 160, 200)
 nProp <- c(0.1, 0.25, 0.5, 0.75, 0.9)
 
-# formula <- c("0.5 + (x) + 0.8*(y-0.5)**2")
-
 formula <- c("0.5 + (x) + 0.8*(y-0.5)**2")
-
-# formula <- c("0.5 + (x) + 0.8*(y-0.5)**2")#,
-             # "-1+1.7*(x)**2 + 0.5*((y-0.5)**2+0.3)**-1",
-             # "0.5 + (x) + 0.8*(y-0.5)**2")
-
-# formula <- c("0.5 + (x) + 0.8*(y-0.5)**2")
 
 A <- list(range=range_Spatial, sigma=sigma_Spatial, nTot=nTot, nProp=nProp, formula=formula)
 DF <- combinatorialFunction(list=A)
 DF <- lapply(X=DF, MARGIN=2, FUN=rep, 4)
-# DF <- as.data.frame(apply(X=DF, MARGIN=2, FUN=rep, 5))
-
-# limlattice <- c(0,1)
-# lengthlattice <- 25
-# xlattice0 <-  seq(limlattice[1], limlattice[2], length.out=lengthlattice)
-# ylattice0 <- seq(limlattice[1], limlattice[2], length.out=lengthlattice)
-# lattice0 <-  inla.mesh.lattice(xlattice0, ylattice0)
-# meshInf <-  inla.mesh.2d(loc=lattice0$loc, max.edge=c(0.05,0.1))
 
 rscale <- rep(1.6, length(DF[[1]]))
-# rscale[DF$sigma==1&DF$range==0.2] <- 0.8
-# rscale[DF$sigma==1&DF$range==0.5] <- 1.2
-# rscale[DF$sigma==1&DF$range==0.8] <- 1.6
 
 betaModel <- c(-2,2)
 
@@ -59,21 +40,18 @@ WAIC <- data.frame(IND=NA, DEP=NA, MIX=NA)
 RMSEMean <- data.frame(IND=NA, DEP=NA, MIX=NA)
 IntegratedValues <- data.frame(SIM=NA, IND=NA, DEP=NA, MIX=NA)
 
+# Having outlined the components of each scenario and the replications for every configuration, we will now conduct simulations. 
+# Two sampling types will be tested on each scenario: independent and preferential. 
+# For the modeling process, we'll employ three distinct models: a geostatistical (or independent) model, a preferential model, and a mixture model.
+
 t1 <- Sys.time()
-# for(i in 1:nrow(DF)){
-for(i in 122:length(DF[[1]])){#seq_along(DF[[1]])){#length(DF[[1]])
-  # i <- 1
+for(i in 1:length(DF[[1]])){#seq_along(DF[[1]])){#length(DF[[1]])
   print(i)
   globalseed <- i
+  #Scenario and sampling simulation
   Sim <- Simulation(globalseed=globalseed, range0=DF$range[i], sigma0=DF$sigma[i], nsamplesInd=DF$nTot[i]*DF$nProp[i], nsamplesDep=DF$nTot[i]*(1-DF$nProp[i]), rscale=rscale[i], cov.formula=DF$formula[i], beta.vec=betaModel)
   Sim$DFSampleInd$kind <- "ind"; Sim$DFSampleDep$kind <- "dep"
   DFSample <- rbind(Sim$DFSampleInd, Sim$DFSampleDep)
-  # ggTestInd <- ggplot() + geom_tile(data=Sim$DFSim, mapping=aes(x=x,y=y,fill=ysim)) + scale_fill_viridis_c(option="turbo") +
-  #   geom_point(data=Sim$DFSampleInd, mapping=aes(x=x,y=y))
-  # print(ggTestInd)
-  # ggTestDep <- ggplot() + geom_tile(data=Sim$DFSim, mapping=aes(x=x,y=y,fill=ysim)) + scale_fill_viridis_c(option="turbo") +
-  #   geom_point(data=Sim$DFSampleDep, mapping=aes(x=x,y=y))
-  # print(ggTestDep)
   ggTestDep <- ggplot() + geom_tile(data=Sim$DFSim, mapping=aes(x=x,y=y,fill=ysim)) + scale_fill_viridis_c(option="turbo") +
     geom_point(data=DFSample, mapping=aes(x=x,y=y))
   print(ggTestDep)
@@ -82,32 +60,31 @@ for(i in 122:length(DF[[1]])){#seq_along(DF[[1]])){#length(DF[[1]])
                            loc.domain = matrix(c(0,0,1,0,1,1,0,1,0,0), ncol=2, byrow=TRUE),
                            max.edge=c(0.05,0.1), cutoff=0.01, offset=c(0.15,0.3))
 
-  priormatern <- list(range=c(0.5,0.5), sigma=c(1,0.5)) #This First
+  priormatern <- list(range=c(0.5,0.5), sigma=c(1,0.5)) 
+  
+  # Independent modelling
   prior.fixed <- list(meanInterceptor=0, meanCov=0, precInterceptor=0.001, precCov=0.001)
   IndependentModelPCMatern <- IndependentModel(dataSample=DFSample, dataSim=Sim$DFSim, mesh=meshInf,
                                                priormaterntype="pcmatern", priormatern=priormatern,
                                                feedbacktype="moments", prior.fixed=prior.fixed)
-  
-  # DFIndPCMatern <- data.frame(x=Sim$DFSim$x, y=Sim$DFSim$y, ysim=IndependentModelPCMatern$IndepedentModel$summary.fitted.values[IndependentModelPCMatern$index.pred, "mean"])
-  # ggplot() + geom_tile(data=DFIndPCMatern, mapping=aes(x=x,y=y,fill=ysim)) + scale_fill_viridis_c(option="turbo")
-  
-  priormatern <- list(range=c(0.5,0.5), sigma=c(1,0.5)) #This Second
+
+  # Preferential modelling
+  priormatern <- list(range=c(0.5,0.5), sigma=c(1,0.5))
   prior.fixed <- list(meanInterceptor=0, meanCov=0, precInterceptor=0.001, precCov=0.001)
   DependentModelPCMatern <- DependentModel(dataSample=DFSample, dataSim=Sim$DFSim, mesh=meshInf,
                                    priormaterntype="pcmatern", priormatern=priormatern,
                                    feedbacktype="moments", prior.fixed=prior.fixed,
                                    cov.formula=DF$formula[i], prior.scale.factor=c(0, 1))
   
-  priormatern <- list(range=c(0.5,0.5), sigma=c(1,0.5)) #This third
+  # Mixture modelling 
+  priormatern <- list(range=c(0.5,0.5), sigma=c(1,0.5))
   prior.fixed <- list(meanInterceptor=0, meanCov=0, precInterceptor=0.001, precCov=0.001)
   DependentModelPCMaternComplex <- DependentModelComplex(dataSample=DFSample, dataSim=Sim$DFSim, mesh=meshInf,
                                            priormaterntype="pcmatern", priormatern=priormatern,
                                            feedbacktype="moments", prior.fixed=prior.fixed,
                                            cov.formula=DF$formula[i], prior.scale.factor=c(0, 1))
   
-  # DFDepPCMatern <- data.frame(x=Sim$DFSim$x, y=Sim$DFSim$y, ysim=DependentModelPCMatern$DepedentModel$summary.fitted.values[DependentModelPCMatern$index.pred, "mean"])
-  # ggplot() + geom_tile(data=DFDepPCMatern, mapping=aes(x=x,y=y,fill=ysim)) + scale_fill_viridis_c(option="turbo")
-  
+  # Summary of global estimators for the models
   WAIC[i,1] <- sum(IndependentModelPCMatern$IndepedentModel$waic$local.waic[which(IndependentModelPCMatern$IndepedentModel$dic$family==1)])
   WAIC[i,2] <- sum(DependentModelPCMatern$DepedentModel$waic$local.waic[which(DependentModelPCMatern$DepedentModel$dic$family==1)])
   WAIC[i,3] <- sum(DependentModelPCMaternComplex$DepedentModel$waic$local.waic[which(DependentModelPCMaternComplex$DepedentModel$dic$family==1)])
